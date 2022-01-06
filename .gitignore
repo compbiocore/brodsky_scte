@@ -2,6 +2,10 @@
 *.fastq
 *.sam
 *.bam
+/working/
+*.sif
+*.tmp.*
+/logs/
 
 ### BELOW IS FOR R projects. Feel free to delete if you don't have an R project ###
 # History files
