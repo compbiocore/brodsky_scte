@@ -60,11 +60,17 @@ RUN apt-get update && \
         vim \
         libpoppler-cpp-dev \
         samtools \
+        bedtools \
+        subread \
+        libpicard-java \
+        igv \
+        fastqc \
+        trimmomatic \
+        unzip \
         && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # FFTW, FIt-SNE
 RUN wget http://www.fftw.org/fftw-3.3.8.tar.gz \
-
     && tar zxvf fftw-3.3.8.tar.gz \
     && rm fftw-3.3.8.tar.gz \
     && cd fftw-3.3.8 \
@@ -91,4 +97,18 @@ RUN R -e "devtools::install_github('satijalab/seurat-wrappers')"
 RUN wget http://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/2.11.3/sratoolkit.2.11.3-ubuntu64.tar.gz \
     && tar zxvf sratoolkit.2.11.3-ubuntu64.tar.gz
 
-ENV PATH="/home/rstudio/sratoolkit.2.11.3-ubuntu64"
+#scTE
+RUN git clone https://github.com/JiekaiLab/scTE.git \
+    && cd scTE \
+    && git checkout 6d1b84068a958e80a0062d45b497522cf4f860b1 \
+    && python3 setup.py install
+
+RUN wget -O cellranger-6.1.2.tar.gz "https://cf.10xgenomics.com/releases/cell-exp/cellranger-6.1.2.tar.gz?Expires=1641869001&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvY2VsbC1leHAvY2VsbHJhbmdlci02LjEuMi50YXIuZ3oiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2NDE4NjkwMDF9fX1dfQ__&Signature=d4beB8Lg4Ie7sd4otu6lAR1N4mG0~Uf8LtajH7Xs8hfB-hsyWbklpKKln5U8vmHHdPXRXVNr9UfeH7OBXCkRFlIWZFrkmfUffsvez~KCCyjF8K1BUb-fJ9WKFogyeLfY0WPTHhQYEeOUAoToe60Yi7teSo7tDkkBKl3M~44RXQAUmW5ATtDwrAL-goyJPwR11ZYU~PZOUQj8Kv6otk4Ra7Rx035bHPhgdN7kSbHuS~yTc~GnyjL79B~zeWtrE7Fn4ZqFuDdbjSuUOpGV-bZdX56cWsM~aQYHIo2-B3gGcynapwm2lLVDvVuGM0kcHoQKZ6ck7X28Ra9l~IT82acCWg__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA" \
+    && tar zxvf cellranger-6.1.2.tar.gz
+
+#STAR
+RUN wget https://github.com/alexdobin/STAR/archive/2.7.9a.tar.gz \
+    && tar -xzf 2.7.9a.tar.gz \
+    && cd STAR-2.7.9a/source \
+    && make STAR
+
