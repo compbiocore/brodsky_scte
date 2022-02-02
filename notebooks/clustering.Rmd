@@ -53,6 +53,7 @@ rownames(counts) <- barcodes
 counts <- as.matrix(counts) %>% t
 sobj <- CreateSeuratObject(counts=counts,min.cells=3,min.features=200,names.field=2,names.delim="_",meta.data=cps_df)
 
+rmsk <- read_delim("/Users/aguang/CORE/ianwong/brodsky_scte/rmsk.txt", col_names=FALSE)
 #sct.combined <- readRDS(file.path(SPATH,"sct.combined.rds"))
 #saveRDS(sct.combined,file=file.path(SPATH,"sct.combined.rds"))
 #saveRDS(obj_sub,file=file.path(SPATH,"obj_sub.rds"))
@@ -115,9 +116,11 @@ table(obj_sub$orig.ident)/table(sobj$orig.ident)
 
 The set of data had `r nrow(sobj@assays$RNA)` features across `r table(sobj$orig.ident)` samples. After subsetting, we have `r nrow(obj_sub@assays$RNA)` features across `r table(obj_sub$orig.ident)` samples. So a reduction of around 10 cells each.
 
-# sctransform without integration
+# clustering
 
-We will use sctransform [@Hafemeister2019] rather than `NormalizeData(), ScaleData(), FindVariableFeatures()`. After that we'll integrate the data.
+## clustering on gene+TE matrix without integration
+
+We will use sctransform [@Hafemeister2019] rather than `NormalizeData(), ScaleData(), FindVariableFeatures()`.
 
 ```{r sctransform, eval=FALSE, include=FALSE}
 sct <- SCTransform(obj_sub, vars.to.regress = "percent.mtdot", verbose=FALSE)
@@ -130,16 +133,15 @@ sct <- FindNeighbors(sct, reduction = "pca", dims = 1:30)
 sct <- FindClusters(sct, resolution = 0.2)
 ```
 
-```{r dimplot-reg, echo=FALSE, fig.cap="UMAP colored by cluster ID. There were 7 identified clusters."}
+Resolution is set very low, at 0.2 because there are so few cells. However this still reveals a lot of clusters.
+
+```{r dimplot-reg, echo=FALSE, fig.cap="UMAP colored by cluster ID for gene+TE matrix without integration."}
 DimPlot(sct, reduction = "umap")
-DimPlot(sct, reduction = "umap", group.by="Patients")
 ```
 
-```{r dimplot-treat, echo=FALSE, fig.cap="UMAP colored by cluster ID, split by treatment. We can see that NULL and WT don't have cluster 6."}
-DimPlot(sct, reduction = "umap", split.by = "Patients")
-```
+The UMAP plot (Figure \@ref(fig:dimplot-reg)) looks pretty bad. Our hypothesis is that this is due to the inclusion of TE to the matrix in addition to the genes. Could also be that the data should be integrated instead of merged, but more likely need to cluster on just the genes.
 
-# integration instead of sctransform
+## clustering on gene+TE matrix with integration
 
 ```{r integrate, eval=FALSE, include=FALSE}
 obj_spl <- SplitObject(obj_sub)
@@ -154,171 +156,51 @@ sct.anchors <- FindIntegrationAnchors(object.list = sct_spl, normalization.metho
 sct.combined <- IntegrateData(anchorset = sct.anchors, k.weight=80, normalization.method = "SCT")
 ```
 
-Resolution for finding clusters is set at 0.5, as the total number of cells is `r length(sct.combined$orig.ident)`, so just under 3k. Can be increased which will produce more clusters. This leads to 7 clusters found total (Figure \@ref(fig:dimplot-reg)). There does not really appear to be a 7th cluster for NULL and WT conditions however (Figure \@ref(fig:dimplot-treat)), which is interesting since NULL has around the same number of cells as MUT even if WT has less. We can confirm this by running the line `sct.combined$treatment[sct.combined$seurat_clusters==6] %>% unique`, which just reveals `r sct.combined$treatment[sct.combined$seurat_clusters==6] %>% unique`. Also, the number of cells in each cluster is: `table(sct.combined$seurat_clusters)=``r table(sct.combined$seurat_clusters)`.
-
-We will also make sure to add the treatments as an ident to the Seurat object.
-
-```{r idents, include=FALSE}
-treatment <- sct.combined$orig.ident
-treatment[treatment %in% c("AB-1","AB-4")] <- "NULL"
-treatment[treatment %in% c("AB-2","AB-5")] <- "WT"
-treatment[treatment %in% c("AB-3","AB-6")] <- "MUT"
-sct.combined$treatment <- treatment
-#saveRDS(sct.combined, file=file.path(SPATH,"sct.combined.rds"))
+```{r clust-genete, eval=FALSE, echo=FALSE}
+sct.combined <- RunPCA(sct.combined, verbose = FALSE)
+sct.combined <- RunUMAP(sct.combined, reduction = "pca", dims = 1:30)
+sct.combined <- FindNeighbors(sct.combined, reduction = "pca", dims = 1:30)
+sct.combined <- FindClusters(sct.combined, resolution = 0.2)
 ```
 
-## What is the fraction of cells from each treatment in each Seurat-defined cluster?
-
-```{r frac-cells, echo=FALSE, warnings=FALSE}
-per_cells <- suppressWarnings(lapply(c("MUT","NULL","WT"), function(x) {
-    tmp <- table(sct.combined$seurat_clusters[sct.combined$treatment==x])
-    tmp/sum(tmp)
-    }) %>% do.call(rbind, .))
-rownames(per_cells) <- c("MUT","NULL","WT")
-knitr:::kable(per_cells, booktabs=TRUE,
-              caption='Proportion of cells in each defined cluster for each treatment. Most of the WT cells are in cluster 2, while most of the NULL and MUT cells are in clusters 0 and 1.', digits=2)
+```{r umap-genete, echo=FALSE}
+DimPlot(sct.combined, reduction = "umap")
 ```
 
-See Table \@ref(tab:frac-cells). 
+We can see that the UMAP for the integrated dataset does not look much different (Figure \@ref(fig:umap-genete)), although it does appear that there are more clusters with multiple cells than without merging, where there was really only cluster 0 that had any significant number of cells. Points to integration being useful but not the reason for all these tiny clusters.
 
-# Marker analysis
+## clustering on just gene matrix with integration
 
-We make sure to change the assay to RNA here since the integrated assay will only have 3000 features as those were the anchors. We do the conserved markers here which are all saved as both `markers$n.rds` and `markers$n.csv` for easy loading into R and easy viewing as a CSV. Top 6 marker genes from each cluster is shown below with the `head` function (after loading from RDS object). Cluster 6 (aka 7th cluster) analysis was not done as it would have errored out anyway.
+```{r filter, eval=FALSE, echo=FALSE}
+features <- rownames(obj_sub@assays$RNA)
+rmsk_subbed <- gsub("_","-",rmsk$X11)
+tes <- which(features %in% rmsk_subbed)
+moretes <- grep("^X\\.", features)
+gene_mat <- obj_sub@assays$RNA[-c(moretes,tes),]
+gobj <- CreateSeuratObject(counts=gene_mat,min.cells=3,min.features=200,names.field=2,names.delim="_",meta.data=cps_df)
 
-```{r ident_change, include=FALSE}
-DefaultAssay(sct.combined) <- "RNA"
+gobj_spl <- SplitObject(gobj)
+gobj_spl <- lapply(gobj_spl, function(x) SCTransform(x, verbose=FALSE))
+gobj_features <- SelectIntegrationFeatures(object.list = gobj_spl, nfeatures = 3000)
+gobj_spl <- PrepSCTIntegration(object.list = gobj_spl, anchor.features = gobj_features)
+gobj.anchors <- FindIntegrationAnchors(object.list = gobj_spl, normalization.method = "SCT",
+    anchor.features = gobj_features)
+
+# https://github.com/satijalab/seurat/issues/3930
+# IntegrateData needs kweight adjusted down when cell count less than 100, which is the case for AB-2
+gobj.combined <- IntegrateData(anchorset = gobj.anchors, k.weight=80, normalization.method = "SCT")
 ```
 
-```{r conserved_markers, eval=FALSE, include=FALSE}
-lapply(0:5, function(x) {
-    m <- FindConservedMarkers(sct.combined, ident.1 = x, grouping.var = "treatment", verbose = FALSE)
-    saveRDS(m, file=file.path(SPATH,paste0("markers",x,".rds")))
-    write.csv(m, file=file.path(SPATH,paste0("markers",x,".csv")))
-})
+We have to filter out the TE from the matrix to get just the genes. There is a file called `rmsk.txt` where we will use the info in column11 to do the filtering. Any features with `(nnnnnn)n` got read in as `X.nnnnn.n` however, so for those we will just filter if the pattern matches `^X\\.` We also have to substitute "_" with "-" from `rmsk$X11` because they got converted to dashes in Seurat since it doesn't allow underscores.
+
+```{r clust-gene, eval=FALSE, echo=FALSE}
+gobj.combined <- RunPCA(gobj.combined, verbose = FALSE)
+gobj.combined <- RunUMAP(gobj.combined, reduction = "pca", dims = 1:30)
+gobj.combined <- FindNeighbors(gobj.combined, reduction = "pca", dims = 1:30)
+gobj.combined <- FindClusters(gobj.combined, resolution = 0.2)
+#saveRDS(gobj.combined,file=file.path(SPATH,"gobj.combined.rds"))
 ```
 
-```{r conserved_markers_head, include=FALSE}
-conserved_markers <- lapply(0:5, function(x) readRDS(file.path(SPATH,paste0("markers",x,".rds"))))
-lapply(conserved_markers, head)
+```{r umap-gene, echo=FALSE}
+DimPlot(gobj.combined, reduction = "umap")
 ```
-
-```{r dotplot, echo=FALSE, fig.cap="Dotplot with top 2 conserved markers from each cluster (except for 6). Red represents high expression in WT, blue high expression in NULL, green in WT."}
-markers.to.plot <- c("AURKB", "UNG", "HIST1H2AL", "HIST2H2AC", "MRPL54",
-    "ATP5MC2", "PIF1", "CDCA3", "CCNB1", "CDC20", "ENPP2", "KDM5B")
-DotPlot(sct.combined, features = markers.to.plot, cols = c("blue", "red", "green"), dot.scale = 5, split.by = "treatment") +
-    RotatedAxis()
-```
-
-Unfortunately the dotplot doesn't look very good with the conserved markers (Figure \@ref(fig:dotplot)). You can see from the tables as well that the log fold changes for the genes are actually extremely different. I'm not sure what's behind the scenes with FindConservedMarkers, but it probably needs to do a likelihood test since there are 3 groups, and it is probably testing through a Wald test against a given reference level instead by default. Would have to look into this more.
-
-
-
-We can also run `FindAllMarkers` (although it does not look only at features that are conserved across cells to also get an idea).
-
-```{r all_markers, eval=FALSE, echo=FALSE}
-DefaultAssay(sct.combined) <- "integrated"
-all_markers <- FindAllMarkers(sct.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-saveRDS(all_markers, file=file.path(SPATH,"all_markers.rds"))
-write.csv(all_markers, file=file.path(SPATH,paste0("all_markers.csv")))
-```
-
-```{r all_markers_show, echo=FALSE}
-all_markers <- readRDS(file.path(SPATH,"all_markers.rds"))
-all_markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
-```
-
-```{r heatmap, echo=FALSE, fig.cap="Expression heatmap with top 10 DE features with each cluster as reference, found using FindAllMarkers."}
-all_markers %>%
-    group_by(cluster) %>%
-    top_n(n = 10, wt = avg_log2FC) -> top10
-DefaultAssay(sct.combined) <- "integrated"
-options(repr.plot.width = 5, repr.plot.height = 12)
-DoHeatmap(sct.combined, features = top10$gene) + NoLegend() + 
-    theme(text = element_text(size = 5.5))
-DefaultAssay(sct.combined) <- "RNA"
-```
-
-From this marker analysis it seems Cluster 1 is all histone genes (Figure \@ref(fig:heatmap)). Beyond that need further information.
-
-NOTE: Can do transferanchors labeling, but will need an atlas.
-
-# Collagen analysis
-
-We pull out the collagen genes from the integrated data, which retained 3k features.
-
-```{r colgenes, echo=FALSE}
-vec <- sct.combined@assays$RNA@data %>% rownames
-colgenes <- vec[str_detect(vec, "COL")]
-```
-
-```{r vln-col7-group, echo=FALSE, fig.cap="Violin plot of COL7A1 expression, grouped by treatment."}
-suppressWarnings(VlnPlot(sct.combined, features = "COL7A1", group.by="treatment"))
-```
-
-```{r vln-col7-split, echo=FALSE, fig.cap="Violin plot of COL7A1 expression, split by treatment."}
-suppressWarnings(VlnPlot(sct.combined, features = "COL7A1", split.by="treatment"))
-```
-
-Collagen genes are: `r colgenes`. There are quite a few, so we won't plot all of them, but we will plot at least "COL7A1". From the plot split across clusters (Figure \@ref(fig:vln-col7-split)) we can see that cluster 6 is a cluster with only MUT cells, we can also see from that and the grouped plot (Figure \@ref(fig:vln-col7-group)) in general COL7A1 has higher expression in MUT compared to WT.
-
-```{r vln-col, echo=FALSE, fig.cap="Violin plots of COL16A1 and COL1A1 expression, split by treatment."}
-col_plots <- suppressWarnings(VlnPlot(sct.combined, features = c("COL16A1", "COL1A1"), split.by = "treatment", combine=FALSE))
-wrap_plots(col_plots, ncol=1)
-```
-
-We also plot COL16A1 and COL1A1, which do not appear to really be differentially expressed (Figure \@ref(fig:vln-col)).
-
-## DE analysis
-
-```{r mut_vs_wt, eval=FALSE}
-mut_vs_wt <- FindMarkers(sct.combined, ident.1 = "MUT", ident.2 = "WT", group.by = "treatment", verbose = FALSE)
-write.csv(mut_vs_wt[mut_vs_wt$p_val_adj < 0.05,], file=file.path(SPATH,"mut_vs_wt.csv"))
-```
-
-```{r mut_vs_wt_head, echo=FALSE}
-mut_vs_wt <- read.csv(file=file.path(SPATH,"mut_vs_wt.csv"),row.names=1)
-head(mut_vs_wt[mut_vs_wt$p_val_adj < 0.05,], n = 15)
-```
-
-Now running a DE analysis across all cell types for MUT vs WT. Can do specific cell clusters as well. COL7A1 is the `r which(rownames(mut_vs_wt)=="COL7A1")`th row in the table with an adjusted pvalue of `r mut_vs_wt[which(rownames(mut_vs_wt)=="COL7A1"),]$p_val_adj`. The list of DE genes is written to `mut_vs_wt.csv`.
-
-```{r mut-feat-plot, echo=FALSE, warnings=FALSE, fig.cap="Feature plot with top 2 DE genes and COL7A1 of MUT vs WT across all cell types."}
-suppressWarnings(FeaturePlot(sct.combined, features = c("EIF3L", "LGALS1", "COL7A1"), split.by = "treatment", max.cutoff = 3))
-```
-
-```{r mut-vln-plot, echo=FALSE, warnings=FALSE, fig.cap="Violin plot with top 2 DE genes and COL7A1 of MUT vs WT across all cell types."}
-mut_vs_wt_vln <- suppressWarnings(VlnPlot(sct.combined, features = c("EIF3L", "LGALS1", "COL7A1"), split.by = "treatment", combine=FALSE))
-wrap_plots(mut_vs_wt_vln, ncol=1)
-```
-
-We'll plot the top 2 DE genes and COL7A1 on a feature plot \@ref(fig:mut-feat-plot) and violin plot \@ref(fig:mut-vln-plot).
-
-```{r mut-degenes, echo=FALSE}
-mvw_degenes <- rownames(mut_vs_wt[mut_vs_wt$p_val_adj < 0.05,])
-mvw_col <- mvw_degenes[str_detect(mvw_degenes, "COL")]
-```
-
-The collagen genes that were DE between MUT and WT are: `r mvw_col`.
-
-```{r mut-col-table, echo=FALSE}
-mut_vs_wt[rownames(mut_vs_wt) %in% mvw_col,]
-```
-
-```{r mvw-col-feat, echo=FALSE, fig.cap="Feature plot with top 3 DE COL genes across all cell types of MUT vs WT."}
-suppressWarnings(FeaturePlot(sct.combined, features = c("COL7A1", "COL1A1", "COL3A1"), split.by = "treatment", max.cutoff = 3))
-```
-
-# Changelog
-
-This is a log of what's significantly different between report versions. Updates are made regularly to github as well, but this allows for a chronological list of deemed notable changes.
-
-## 2022-01-05
-
- * Added table of fraction of cells from each treatment in each cluster
- * Added marker analysis with msigDB
- 
-## 2021-12-16
-
- * Initial report, with preamble on setup, preprocessing and QC, transformation + integration, PCA + UMAP, basic marker analysis (top expressed genes each cluster) but no annotation, and a DE analysis of collagen genes
