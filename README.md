@@ -13,11 +13,11 @@ Optional directories are:
 # CBC Project Information
 
 ```
-title:
-tags:
-analysts:
-git_repo_url:
+title: brodsky_scte
+tags: smartseq2, scrnaseq
+analysts: Ashok Ragavendran, August Guang, Jordan Lawson, Joselynn Wallace
+git_repo_url: https://github.com/compbiocore/brodsky_scte
 resources_used:
-summary:
+summary: Apply the scTE pipeline to process human cartilage data from Ji et al paper and try to identify clusters corresponding to transposable elements, specifically Line1 elements. 
 project_id:
 ```
