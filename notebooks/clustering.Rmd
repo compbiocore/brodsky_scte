@@ -15,6 +15,73 @@ bibliography: "analysis.bib"
 
 Setup: 10 patients, 34 samples, mapping of OA (patients) to P (samples)
 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(patchwork)
+ .libPaths(c("/usr/local/lib/R/site-library","/usr/local/lib/R/library"))
+sct.combined  <- readRDS('/gpfs/data/cbc/abrodsky/brodsky_scte/working/obj_sub.rds')
+sct.rownames <- rownames(sct.combined)
+
+TEs <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/working/refs/rmsk.txt')
+L1 <- TEs %>% dplyr::filter(V13 == 'L1')
+Alu <- TEs %>% dplyr::filter(V13 == 'Alu')
+
+L1_features <- L1$V11
+Alu_features <- Alu$V11
+
+TE_features <- TEs$V11
+
+counts_df <- data.frame(sct.combined@assays$RNA@counts)
+counts_df$feature <- rownames(counts_df)
+
+
+L1_counts <- counts_df %>% dplyr::filter(feature %in% L1_features)
+L1_counts_long <- L1_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+
+l1 <- ggplot(data=L1_counts_long, aes(x=feature, y=count)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+#L1MEd very highly expressed 
+
+
+Alu_counts <- counts_df %>% dplyr::filter(feature %in% Alu_features)
+Alu_counts_long <- Alu_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+
+alu <- ggplot(data=Alu_counts_long, aes(x=feature, y=count)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+#AluSX1 very highly expressed 
+
+
+actin_features <- grep('^ACT', counts_df$feature, value = T)
+
+actin_counts <- counts_df %>% dplyr::filter(feature %in% actin_features)
+actin_counts_long <- actin_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+
+actin <- ggplot(data=actin_counts_long, aes(x=feature, y=count)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+#AluSX1 very highly expressed 
+
+actin | alu | l1
+```
+
+```{r}
+#filter to just look at expression of all TEs
+
+TE_features <- TEs$V11
+
+TE_counts <- counts_df %>% dplyr::filter(feature %in% TE_features)
+gene_counts <- counts_df %>% dplyr::filter(!feature %in% TE_features)
+
+
+
+```
+
+
 ```{r install_commands, include=FALSE, eval=FALSE}
 #If the packages aren't installed already, the below commands can be run to install everything.
 if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
