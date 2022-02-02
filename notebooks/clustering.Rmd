@@ -24,6 +24,7 @@ library(patchwork)
  .libPaths(c("/usr/local/lib/R/site-library","/usr/local/lib/R/library"))
 sct.combined  <- readRDS('/gpfs/data/cbc/abrodsky/brodsky_scte/working/obj_sub.rds')
 sct.rownames <- rownames(sct.combined)
+patient_data <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/metadata/oa_patient_sra.txt', header = T)
 
 TEs <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/working/refs/rmsk.txt')
 L1 <- TEs %>% dplyr::filter(V13 == 'L1')
@@ -41,18 +42,22 @@ counts_df$feature <- rownames(counts_df)
 L1_counts <- counts_df %>% dplyr::filter(feature %in% L1_features)
 L1_counts_long <- L1_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
 
-l1 <- ggplot(data=L1_counts_long, aes(x=feature, y=count)) +
-  geom_bar(stat="identity") +
-  theme(axis.text.x = element_text(angle = 45, hjust=1))
+l1 <- ggplot(data=L1_counts_long, aes(x=feature, y=log10(count +1))) +
+  geom_boxplot(outlier.size = .005) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))  + ggtitle('l1')
 #L1MEd very highly expressed 
 
+plotly(l1)
+
+Alu_counts$feature <- NULL
+hist(Alu_counts)
 
 Alu_counts <- counts_df %>% dplyr::filter(feature %in% Alu_features)
 Alu_counts_long <- Alu_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
 
 alu <- ggplot(data=Alu_counts_long, aes(x=feature, y=count)) +
-  geom_bar(stat="identity") +
-  theme(axis.text.x = element_text(angle = 45, hjust=1))
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))  + ggtitle('alu')
 #AluSX1 very highly expressed 
 
 
@@ -62,14 +67,12 @@ actin_counts <- counts_df %>% dplyr::filter(feature %in% actin_features)
 actin_counts_long <- actin_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
 
 actin <- ggplot(data=actin_counts_long, aes(x=feature, y=count)) +
-  geom_bar(stat="identity") +
-  theme(axis.text.x = element_text(angle = 45, hjust=1))
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))  + ggtitle('actin')
 #AluSX1 very highly expressed 
 
 actin | alu | l1
-```
 
-```{r}
 #filter to just look at expression of all TEs
 
 TE_features <- TEs$V11
@@ -79,7 +82,89 @@ gene_counts <- counts_df %>% dplyr::filter(!feature %in% TE_features)
 
 
 
+
+TE_counts_long <- TE_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+
+#also interested in IL1-B gene, do see 
+
+boxplot(log10(count + 1) ~ feature, data = TE_counts_long, outline = F)
+
+
+te_hist<-ggplot(TE_counts_long, aes(x=log(count + 1))) + 
+  geom_histogram(color="black", fill="white") + ggtitle('TEs') + facet_wrap(~feature)
+
+gene_hist<-ggplot(gene_counts_long, aes(x=log(count + 1))) + 
+  geom_histogram(color="black", fill="white") + ggtitle('genes')
+
+te_hist | gene_hist
+ggsave('/gpfs/data/cbc/abrodsky/brodsky_scte/results/te_vs_gene_counts.png', device = 'png')
+
+# We can detect the TEs
+all_TE <- boxplot(log10(count + 1) ~ feature, data = TE_counts_long, outline = F,las=2)
+
+# We can detect the L1 types
+l1 <- ggplot(data=L1_counts_long, aes(x=feature, y=log10(count +1))) +
+  geom_boxplot(outlier.size = .005) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1))  + ggtitle('l1')
+#L1MEd very highly expressed 
+
+#ggplotly(l1)
+
+# And the Alu types
+alu <- ggplot(data=Alu_counts_long, aes(x=feature, y=log10(count +1))) +
+  geom_boxplot(outlier.size = .005) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1))  + ggtitle('alu')
+#AluSX1 very highly expressed 
+#ggplotly(alu)
+
+#contrast with actin genes
+actin <- ggplot(data=actin_counts_long, aes(x=feature, y=log10(count +1))) +
+  geom_boxplot(outlier.size = .005) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1))  +ggtitle('actin')
+
+
+actin_alu_la <- actin / alu / l1
+actin_alu_la 
+ggsave('/gpfs/data/cbc/abrodsky/brodsky_scte/results/actin_alu_la.png', device = 'png')
+
+plot(all_TE)
 ```
+
+```{r}
+gobj.combined  <- readRDS('/gpfs/data/cbc/abrodsky/brodsky_scte/working/gobj.combined.rds')
+DefaultAssay(gobj.combined) <- 'integrated'
+
+DimPlot(gobj.combined, reduction = "umap")
+VlnPlot(gobj.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+#nFeature_RNA is the number of genes detected in each cell. nCount_RNA is the total number of molecules detected within a cell.
+
+gobj.combined_sub <- subset(gobj.combined, subset = nFeature_RNA < 20000 & nFeature_RNA > 5000 & nCount_RNA < 750000 & nCount_RNA > 10000 & percent.mt < 5)
+#gobj.combined_sub[["percent.mt"]] <- PercentageFeatureSet(gobj.combined_sub,pattern="^MT-")
+
+gobj.combined_sub <- SCTransform(gobj.combined_sub, vars.to.regress = "percent.mt", verbose=FALSE)
+
+VlnPlot(gobj.combined_sub, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+DefaultAssay(gobj.combined_sub) <- 'integrated'
+
+gobj.combined_sub <- RunPCA(gobj.combined_sub , verbose = FALSE, assay = 'integrated')
+gobj.combined_sub <- RunUMAP(gobj.combined_sub , reduction = "pca", dims = 1:5, assay = 'integrated')
+
+gobj.combined_sub  <- FindNeighbors(gobj.combined_sub , reduction = "pca", dims = 1:15)
+gobj.combined_sub  <- FindClusters(gobj.combined_sub , resolution = 0.2)
+
+
+gobj.combined_sub  <- RunTSNE(gobj.combined_sub, dims = 1:15, tsne.method = "FIt-SNE") 
+
+
+DimPlot(gobj.combined_sub, reduction="umap", group.by = "Patients") + NoLegend()
+DimPlot(gobj.combined_sub, reduction="tsne", group.by = "Patients") + NoLegend()
+
+
+```
+
+
 
 
 ```{r install_commands, include=FALSE, eval=FALSE}
