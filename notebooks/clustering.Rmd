@@ -23,20 +23,72 @@ library(plotly)
 library(patchwork)
  .libPaths(c("/usr/local/lib/R/site-library","/usr/local/lib/R/library"))
 sct.combined  <- readRDS('/gpfs/data/cbc/abrodsky/brodsky_scte/working/obj_sub.rds')
-sct.rownames <- rownames(sct.combined)
+#sct.rownames <- rownames(sct.combined)
 patient_data <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/metadata/oa_patient_sra.txt', header = T)
-
 TEs <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/working/refs/rmsk.txt')
-L1 <- TEs %>% dplyr::filter(V13 == 'L1')
-Alu <- TEs %>% dplyr::filter(V13 == 'Alu')
-
-L1_features <- L1$V11
-Alu_features <- Alu$V11
-
-TE_features <- TEs$V11
+cell_info <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/metadata/cell_info.txt', header = T)
 
 counts_df <- data.frame(sct.combined@assays$RNA@counts)
 counts_df$feature <- rownames(counts_df)
+
+TE_features <- TEs$V11
+
+TE_counts <- counts_df %>% dplyr::filter(feature %in% TE_features)
+
+TE_counts_long <- TE_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+
+cell_info$key <- cell_info$Cell
+patient_data$key <- paste0(patient_data$file, '_', patient_data$cell)
+
+nrow(patient_data)
+nrow(cell_info)
+
+patient_data_cell_info <- inner_join(patient_data, cell_info)
+
+patient_data_cell_info$Cell <- NULL
+patient_data_cell_info$old_key <-patient_data_cell_info$key
+patient_data_cell_info$key <- paste0(patient_data_cell_info$barcode, '_',patient_data_cell_info$file,'_',patient_data_cell_info$patient)
+
+TE_counts_long$key <- TE_counts_long$cell
+TE_counts_long$cell <- NULL
+patient_data_cell_info_counts <- inner_join(patient_data_cell_info, TE_counts_long, by = 'key')
+
+patient_data_cell_info_counts$processed <- NULL
+patient_data_cell_info_counts$GSM <- NULL
+patient_data_cell_info_counts$Rawreads <- NULL
+patient_data_cell_info_counts$Cleanreads <- NULL
+patient_data_cell_info_counts$Alignedreads <- NULL
+patient_data_cell_info_counts$Mappingrate <- NULL
+patient_data_cell_info_counts$Genenumber <- NULL
+patient_data_cell_info_counts$Transcriptnumber <- NULL
+
+TEs_filt <- TEs
+TEs_filt$V1 <- NULL
+TEs_filt$V2 <- NULL
+TEs_filt$V3 <- NULL
+TEs_filt$V4 <- NULL
+TEs_filt$V5 <- NULL
+TEs_filt$V6 <- NULL
+TEs_filt$V7 <- NULL
+TEs_filt$V8 <- NULL
+TEs_filt$V9 <- NULL
+TEs_filt$V10 <- NULL
+TEs_filt$V14 <- NULL
+TEs_filt$V15 <- NULL
+TEs_filt$V16 <- NULL
+TEs_filt$V17 <- NULL
+
+#not sure how to label v11-v13.. need to look it up on the goldenpath website maybe
+patient_data_cell_info_counts_types <- left_join(patient_data_cell_info_counts, TEs, by = c("feature" = "V11"))
+
+```
+
+
+```{r}
+
+gene_counts <- counts_df %>% dplyr::filter(!feature %in% TE_features)
+
+
 
 
 L1_counts <- counts_df %>% dplyr::filter(feature %in% L1_features)
@@ -75,15 +127,10 @@ actin | alu | l1
 
 #filter to just look at expression of all TEs
 
-TE_features <- TEs$V11
-
-TE_counts <- counts_df %>% dplyr::filter(feature %in% TE_features)
-gene_counts <- counts_df %>% dplyr::filter(!feature %in% TE_features)
 
 
 
 
-TE_counts_long <- TE_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
 
 #also interested in IL1-B gene, do see 
 
