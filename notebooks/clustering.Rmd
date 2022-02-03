@@ -31,11 +31,11 @@ cell_info <- read.table('/gpfs/data/cbc/abrodsky/brodsky_scte/metadata/cell_info
 counts_df <- data.frame(sct.combined@assays$RNA@counts)
 counts_df$feature <- rownames(counts_df)
 
-TE_features <- TEs$V11
+TE_features <- TEs$V11 #find all underscore and replace with dash, parentheses get converted to x
 
 TE_counts <- counts_df %>% dplyr::filter(feature %in% TE_features)
 
-TE_counts_long <- TE_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
+#TE_counts_long <- TE_counts %>% tidyr::pivot_longer(names_to = 'cell', values_to = 'count', cols = AAACATCG_OA10_P27:TTCACGCA_OA9_P26)
 
 cell_info$key <- cell_info$Cell
 patient_data$key <- paste0(patient_data$file, '_', patient_data$cell)
@@ -45,6 +45,26 @@ nrow(cell_info)
 
 patient_data_cell_info <- inner_join(patient_data, cell_info)
 
+#add the cleaned patient data DF, when you create a seurat object you can add that DF as the metadata object
+
+patient_data_cell_info$processed <- NULL
+patient_data_cell_info$GSM <- NULL
+patient_data_cell_info$Rawreads <- NULL
+patient_data_cell_info$Cleanreads <- NULL
+patient_data_cell_info$Alignedreads <- NULL
+patient_data_cell_info$Mappingrate <- NULL
+patient_data_cell_info$Genenumber <- NULL
+patient_data_cell_info$Transcriptnumber <- NULL
+
+rownames(patient_data_cell_info) <- paste0(patient_data_cell_info$key)
+
+TE_seurat <- CreateSeuratObject(counts = TE_counts, meta.data = patient_data_cell_info)
+
+
+
+```
+
+```{r}
 patient_data_cell_info$Cell <- NULL
 patient_data_cell_info$old_key <-patient_data_cell_info$key
 patient_data_cell_info$key <- paste0(patient_data_cell_info$barcode, '_',patient_data_cell_info$file,'_',patient_data_cell_info$patient)
@@ -78,8 +98,12 @@ TEs_filt$V15 <- NULL
 TEs_filt$V16 <- NULL
 TEs_filt$V17 <- NULL
 
+patient_data_cell_info_counts_w <- tidyr::pivot_wider(patient_data_cell_info_counts, names_from = 'SRR', values_from = 'count')
+
+pivot_wider(names_from = station, values_from = seen)
+
 #not sure how to label v11-v13.. need to look it up on the goldenpath website maybe
-patient_data_cell_info_counts_types <- left_join(patient_data_cell_info_counts, TEs, by = c("feature" = "V11"))
+patient_data_cell_info_counts_types <- inner_join(patient_data_cell_info_counts, TEs_filt, by = c("feature" = "V11"))
 
 ```
 
